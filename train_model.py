@@ -1,6 +1,5 @@
 import os
 # --- FIX: FORCE CPU USAGE TO AVOID CUDA/GPU ERRORS ---
-# Setting CUDA_VISIBLE_DEVICES to '-1' instructs TensorFlow to bypass the GPU entirely.
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 # ---------------------------------------------------
 
@@ -12,8 +11,7 @@ DATASET_DIR = "dataset"
 MODEL_PATH = "disease_model.h5"
 IMG_SIZE = (128, 128)
 BATCH_SIZE = 16
-EPOCHS = 8
-# Removed non-standard space here ^
+EPOCHS = 8  # increase if you have more time/data
 
 # confirm dataset exists
 if not os.path.exists(DATASET_DIR):
@@ -48,18 +46,15 @@ model = models.Sequential([
     layers.Flatten(),
     layers.Dense(128, activation='relu'),
     layers.Dropout(0.4),
-    # The output layer size is determined by the number of classes found in your dataset folder structure
     layers.Dense(train_gen.num_classes, activation='softmax')
 ])
 
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 model.summary()
 
-# This is the line that was crashing due to the GPU error
 print("Starting model training on CPU...")
 history = model.fit(train_gen, validation_data=val_gen, epochs=EPOCHS)
 
 model.save(MODEL_PATH)
 print("Saved model to", MODEL_PATH)
-# This provides the necessary class-index mapping for prediction later
 print("Class mapping:", train_gen.class_indices)
