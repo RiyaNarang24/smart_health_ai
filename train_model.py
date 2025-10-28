@@ -1,70 +1,55 @@
-import tensorflow as tf
+# train_model.py (simple CNN)
+import os
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import layers, models
-import os
+import tensorflow as tf
 
-# Paths
 DATASET_DIR = "dataset"
 MODEL_PATH = "disease_model.h5"
-
-# Parameters
 IMG_SIZE = (128, 128)
-BATCH_SIZE = 32
-EPOCHS = 10  # Increase for better accuracy if you have GPU
+BATCH_SIZE = 16
+EPOCHS = 8   # increase if you have more time/data
 
-# Check dataset folders
+# confirm dataset exists
 if not os.path.exists(DATASET_DIR):
-    raise Exception("Dataset folder not found! Make sure /dataset exists with disease subfolders.")
+    raise SystemExit("Put your images under ./dataset/<label>/")
 
-# Data preprocessing and augmentation
-datagen = ImageDataGenerator(
-    rescale=1./255,
-    validation_split=0.2,
-    shear_range=0.2,
-    zoom_range=0.2,
-    horizontal_flip=True
-)
+datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
 
-train_data = datagen.flow_from_directory(
+train_gen = datagen.flow_from_directory(
     DATASET_DIR,
     target_size=IMG_SIZE,
     batch_size=BATCH_SIZE,
+    class_mode='categorical',
     subset='training'
 )
 
-val_data = datagen.flow_from_directory(
+val_gen = datagen.flow_from_directory(
     DATASET_DIR,
     target_size=IMG_SIZE,
     batch_size=BATCH_SIZE,
+    class_mode='categorical',
     subset='validation'
 )
 
-# CNN Model
 model = models.Sequential([
-    layers.Conv2D(32, (3,3), activation='relu', input_shape=(128,128,3)),
+    layers.Conv2D(32, (3,3), activation='relu', input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3)),
     layers.MaxPooling2D(2,2),
-
     layers.Conv2D(64, (3,3), activation='relu'),
     layers.MaxPooling2D(2,2),
-
     layers.Conv2D(128, (3,3), activation='relu'),
     layers.MaxPooling2D(2,2),
-
     layers.Flatten(),
     layers.Dense(128, activation='relu'),
-    layers.Dropout(0.5),
-    layers.Dense(len(train_data.class_indices), activation='softmax')
+    layers.Dropout(0.4),
+    layers.Dense(train_gen.num_classes, activation='softmax')
 ])
 
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 model.summary()
 
-# Training
-history = model.fit(train_data, validation_data=val_data, epochs=EPOCHS)
+history = model.fit(train_gen, validation_data=val_gen, epochs=EPOCHS)
 
-# Save model
 model.save(MODEL_PATH)
-print(f"✅ Model trained and saved as {MODEL_PATH}")
-
-# Print the mapping of labels
-print("Class labels:", train_data.class_indices)
+print("Saved model to", MODEL_PATH)
+print("Class mapping:", train_gen.class_indices)
