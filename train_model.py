@@ -12,7 +12,8 @@ DATASET_DIR = "dataset"
 MODEL_PATH = "disease_model.h5"
 IMG_SIZE = (128, 128)
 BATCH_SIZE = 16
-EPOCHS = 8   # increase if you have more time/data
+EPOCHS = 8  # increase if you have more time/data
+# Removed non-standard space here ^
 
 # confirm dataset exists
 if not os.path.exists(DATASET_DIR):
