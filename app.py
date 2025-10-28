@@ -1,72 +1,63 @@
 from flask import Flask, render_template, request, redirect, url_for
-import os
-import json
 import tensorflow as tf
-from tensorflow.keras.preprocessing import image
 import numpy as np
+from tensorflow.keras.preprocessing import image
+import os
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
 
-# -----------------------------
-# Load Rules from JSON
-# -----------------------------
-RULES_FILE = "rules.json"
-if os.path.exists(RULES_FILE):
-    with open(RULES_FILE, "r") as f:
-        rules = json.load(f)
-else:
-    rules = [
-        {"if": ["sneezing", "cough", "cold"], "then": "flu"},
-        {"if": ["fever", "body pain"], "then": "viral infection"},
-        {"if": ["headache", "nausea"], "then": "migraine"},
-        {"if": ["rash", "itching"], "then": "allergy"},
-        {"if": ["tiredness", "weakness"], "then": "fatigue"}
-    ]
+# -------------------------------
+# 📘 RULE-BASED SYSTEM
+# -------------------------------
+rules = [
+    {"if": ["sneezing", "cough", "cold"], "then": "flu"},
+    {"if": ["fever", "body pain"], "then": "viral infection"},
+    {"if": ["headache", "nausea"], "then": "migraine"},
+    {"if": ["rash", "itching"], "then": "allergy"},
+    {"if": ["tiredness", "weakness"], "then": "fatigue"}
+]
 
-# Load CNN Model (for image detection)
-MODEL_PATH = "disease_model.h5"
-model = None
-if os.path.exists(MODEL_PATH):
-    model = tf.keras.models.load_model(MODEL_PATH)
-
-# -----------------------------
-# Helper Functions
-# -----------------------------
-def save_rules():
-    with open(RULES_FILE, "w") as f:
-        json.dump(rules, f, indent=4)
-
+# Helper function for reasoning
 def infer_from_rules(facts):
-    conclusions = []
+    conclusions = set()
     for rule in rules:
         if all(cond in facts for cond in rule["if"]):
-            conclusions.append(rule["then"])
-    if not conclusions:
-        # If no exact match, calculate probabilities based on partial matches
-        possible = {}
-        for rule in rules:
-            match_count = len(set(rule["if"]) & set(facts))
-            if match_count > 0:
-                prob = (match_count / len(rule["if"])) * 100
-                possible[rule["then"]] = round(prob, 2)
-        conclusions = {"probabilities": possible}
-    return conclusions
+            conclusions.add(rule["then"])
+    return list(conclusions)
 
-def predict_disease_from_image(img_path):
-    if not model:
-        return "Model not available"
-    img = image.load_img(img_path, target_size=(64, 64))
-    img_array = image.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0) / 255.0
-    preds = model.predict(img_array)
-    class_names = os.listdir('dataset')
-    result = class_names[np.argmax(preds)]
-    return result
+# -------------------------------
+# 🧠 CNN IMAGE-BASED DETECTOR
+# -------------------------------
+# Load your trained CNN model
+MODEL_PATH = "disease_model.h5"
+cnn_model = None
+class_labels = ['covid', 'malaria', 'normal', 'pneumonia', 'tuberculosis']  # update this after training
 
-# -----------------------------
-# Routes
-# -----------------------------
+if os.path.exists(MODEL_PATH):
+    cnn_model = tf.keras.models.load_model(MODEL_PATH)
+    print("✅ CNN Model loaded successfully.")
+else:
+    print("⚠️ CNN model not found. Only rule-based diagnosis will work.")
+
+def predict_image(img_path):
+    """Predict disease from uploaded image."""
+    try:
+        img = image.load_img(img_path, target_size=(128, 128))
+        x = image.img_to_array(img)
+        x = np.expand_dims(x, axis=0)
+        x = x / 255.0
+
+        preds = cnn_model.predict(x)[0]
+        class_idx = np.argmax(preds)
+        confidence = round(preds[class_idx] * 100, 2)
+        return class_labels[class_idx], confidence
+    except Exception as e:
+        print("Error predicting image:", e)
+        return None, 0
+
+# -------------------------------
+# 🌐 ROUTES
+# -------------------------------
 @app.route('/')
 def index():
     return render_template('index.html', rules=rules, results=None)
@@ -75,38 +66,44 @@ def index():
 def add_rule():
     conditions = request.form.get('conditions', '').lower().split(',')
     conclusion = request.form.get('conclusion', '').strip().lower()
-    conditions = [c.strip() for c in conditions if c.strip().replace(' ', '').isalpha()]
-    if conditions and conclusion.replace(' ', '').isalpha():
+    conditions = [c.strip() for c in conditions if c.strip().isalpha()]
+
+    if conditions and conclusion.isalpha():
         rules.append({"if": conditions, "then": conclusion})
-        save_rules()
     return redirect(url_for('index'))
 
-@app.route('/delete_rule/<int:index>')
+@app.route('/delete_rule/<int:index>', methods=['POST'])
 def delete_rule(index):
     if 0 <= index < len(rules):
         rules.pop(index)
-        save_rules()
     return redirect(url_for('index'))
 
 @app.route('/infer', methods=['POST'])
 def infer():
     user_facts = request.form.get('facts', '').lower().split(',')
-    user_facts = [f.strip() for f in user_facts if f.strip().replace(' ', '').isalpha()]
+    user_facts = [f.strip() for f in user_facts if f.strip().isalpha()]
     conclusions = infer_from_rules(user_facts)
-    return render_template('index.html', rules=rules, results={'conclusions': conclusions})
+    image_result = None
+    confidence = None
 
-@app.route('/upload_image', methods=['POST'])
-def upload_image():
-    if 'image' not in request.files:
-        return redirect(url_for('index'))
-    file = request.files['image']
-    if file.filename == '':
-        return redirect(url_for('index'))
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    file.save(filepath)
-    prediction = predict_disease_from_image(filepath)
-    return render_template('index.html', rules=rules, results={'image_result': prediction})
+    # Handle uploaded image
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename != '':
+            path = os.path.join("static", file.filename)
+            file.save(path)
+            if cnn_model:
+                image_result, confidence = predict_image(path)
 
+    final_result = conclusions.copy()
+    if image_result:
+        final_result.append(f"{image_result} ({confidence}% confidence)")
+
+    return render_template('index.html', rules=rules,
+                           results={'conclusions': final_result})
+
+# -------------------------------
+# 🚀 RUN APP
+# -------------------------------
 if __name__ == '__main__':
-    os.makedirs('static/uploads', exist_ok=True)
     app.run(debug=True)
