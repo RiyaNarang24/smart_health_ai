@@ -1,109 +1,109 @@
-from flask import Flask, render_template, request, redirect, url_for
-import tensorflow as tf
-import numpy as np
-from tensorflow.keras.preprocessing import image
+import streamlit as st
+import json
 import os
 
-app = Flask(__name__)
+# ---------- TITLE ----------
+st.set_page_config(page_title="Smart Health Assistant", layout="centered")
 
-# -------------------------------
-# 📘 RULE-BASED SYSTEM
-# -------------------------------
-rules = [
-    {"if": ["sneezing", "cough", "cold"], "then": "flu"},
-    {"if": ["fever", "body pain"], "then": "viral infection"},
-    {"if": ["headache", "nausea"], "then": "migraine"},
-    {"if": ["rash", "itching"], "then": "allergy"},
-    {"if": ["tiredness", "weakness"], "then": "fatigue"}
-]
+st.title("🧠 Smart Health Assistant — Image + Knowledge-based")
 
-# Helper function for reasoning
-def infer_from_rules(facts):
-    conclusions = set()
-    for rule in rules:
-        if all(cond in facts for cond in rule["if"]):
-            conclusions.add(rule["then"])
-    return list(conclusions)
+# Sidebar for navigation
+mode = st.sidebar.radio("Choose mode:", ["🧩 Knowledge-Based AI Agent", "🩺 Image-Based Diagnosis"])
 
-# -------------------------------
-# 🧠 CNN IMAGE-BASED DETECTOR
-# -------------------------------
-# Load your trained CNN model
-MODEL_PATH = "disease_model.h5"
-cnn_model = None
-class_labels = ['covid', 'malaria', 'normal', 'pneumonia', 'tuberculosis']  # update this after training
+# ---------- KNOWLEDGE-BASED AI ----------
+if mode == "🧩 Knowledge-Based AI Agent":
 
-if os.path.exists(MODEL_PATH):
-    cnn_model = tf.keras.models.load_model(MODEL_PATH)
-    print("✅ CNN Model loaded successfully.")
+    st.markdown("""
+        <style>
+        .stApp {
+            background-color: #f8fbff;
+        }
+        .stButton>button {
+            border-radius: 10px;
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+        .rule-box {
+            background-color: #ffffff;
+            padding: 12px 18px;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            box-shadow: 0px 2px 4px rgba(0,0,0,0.1);
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.header("🤖 Smart Health Knowledge Agent")
+
+    st.caption("This mini AI guesses your condition from symptoms. You can teach it new rules too!")
+
+    RULES_FILE = "rules.json"
+
+    # Load rules
+    if os.path.exists(RULES_FILE):
+        with open(RULES_FILE, "r") as f:
+            rules = json.load(f)
+    else:
+        rules = [
+            {"if": ["sneezing", "cough", "cold"], "then": "flu"},
+            {"if": ["fever", "body pain"], "then": "viral infection"},
+            {"if": ["headache", "nausea"], "then": "migraine"},
+            {"if": ["rash", "itching"], "then": "allergy"},
+            {"if": ["tiredness", "weakness"], "then": "fatigue"},
+        ]
+
+    # Display existing rules
+    st.subheader("🧩 Known Rules")
+    for i, rule in enumerate(rules):
+        cols = st.columns([3, 1])
+        cols[0].markdown(
+            f'<div class="rule-box">If <b>{", ".join(rule["if"])}</b> → <b>{rule["then"]}</b></div>',
+            unsafe_allow_html=True,
+        )
+        if cols[1].button("❌ Delete", key=f"delete_{i}"):
+            del rules[i]
+            with open(RULES_FILE, "w") as f:
+                json.dump(rules, f, indent=4)
+            st.rerun()
+
+    # Add a new rule
+    st.subheader("💡 Add a New Rule")
+    new_if = st.text_input("If parts (comma separated)")
+    new_then = st.text_input("Then part")
+    if st.button("Add Rule"):
+        if new_if and new_then:
+            rules.append({"if": [x.strip() for x in new_if.split(",")], "then": new_then.strip()})
+            with open(RULES_FILE, "w") as f:
+                json.dump(rules, f, indent=4)
+            st.success("✅ Rule added!")
+            st.rerun()
+        else:
+            st.warning("Please fill both fields.")
+
+    # Inference section
+    st.subheader("🧠 Ask the AI")
+    symptoms_input = st.text_input("Enter symptoms (comma separated)")
+    if st.button("Infer"):
+        if symptoms_input:
+            symptoms = [x.strip().lower() for x in symptoms_input.split(",")]
+            conclusions = []
+            for rule in rules:
+                if all(sym in symptoms for sym in rule["if"]):
+                    conclusions.append(rule["then"])
+            if conclusions:
+                st.success("Possible condition(s): " + ", ".join(conclusions))
+            else:
+                st.info("No exact match found.")
+        else:
+            st.warning("Please enter symptoms to infer.")
+
+# ---------- IMAGE-BASED DIAGNOSIS ----------
 else:
-    print("⚠️ CNN model not found. Only rule-based diagnosis will work.")
+    st.header("🩺 Image-Based Diagnosis")
+    st.caption("Upload a medical image (like X-ray or skin lesion) to analyze with AI.")
 
-def predict_image(img_path):
-    """Predict disease from uploaded image."""
-    try:
-        img = image.load_img(img_path, target_size=(128, 128))
-        x = image.img_to_array(img)
-        x = np.expand_dims(x, axis=0)
-        x = x / 255.0
-
-        preds = cnn_model.predict(x)[0]
-        class_idx = np.argmax(preds)
-        confidence = round(preds[class_idx] * 100, 2)
-        return class_labels[class_idx], confidence
-    except Exception as e:
-        print("Error predicting image:", e)
-        return None, 0
-
-# -------------------------------
-# 🌐 ROUTES
-# -------------------------------
-@app.route('/')
-def index():
-    return render_template('index.html', rules=rules, results=None)
-
-@app.route('/add_rule', methods=['POST'])
-def add_rule():
-    conditions = request.form.get('conditions', '').lower().split(',')
-    conclusion = request.form.get('conclusion', '').strip().lower()
-    conditions = [c.strip() for c in conditions if c.strip().isalpha()]
-
-    if conditions and conclusion.isalpha():
-        rules.append({"if": conditions, "then": conclusion})
-    return redirect(url_for('index'))
-
-@app.route('/delete_rule/<int:index>', methods=['POST'])
-def delete_rule(index):
-    if 0 <= index < len(rules):
-        rules.pop(index)
-    return redirect(url_for('index'))
-
-@app.route('/infer', methods=['POST'])
-def infer():
-    user_facts = request.form.get('facts', '').lower().split(',')
-    user_facts = [f.strip() for f in user_facts if f.strip().isalpha()]
-    conclusions = infer_from_rules(user_facts)
-    image_result = None
-    confidence = None
-
-    # Handle uploaded image
-    if 'image' in request.files:
-        file = request.files['image']
-        if file and file.filename != '':
-            path = os.path.join("static", file.filename)
-            file.save(path)
-            if cnn_model:
-                image_result, confidence = predict_image(path)
-
-    final_result = conclusions.copy()
-    if image_result:
-        final_result.append(f"{image_result} ({confidence}% confidence)")
-
-    return render_template('index.html', rules=rules,
-                           results={'conclusions': final_result})
-
-# -------------------------------
-# 🚀 RUN APP
-# -------------------------------
-if __name__ == '__main__':
-    app.run(debug=True)
+    uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
+    if uploaded_file:
+        st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
+        st.info("🔍 (Image analysis model placeholder — connect your model here)")

@@ -1,99 +1,71 @@
-import os
-import sys
 import tensorflow as tf
-from tensorflow.keras import layers, models
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from tensorflow.keras.models import Model
+from sklearn.utils import class_weight
+import numpy as np
 
-# ----- CONFIGURATION -----
-DATASET_DIR = "dataset"
-IMG_SIZE = (150, 150)
-BATCH_SIZE = 32
-EPOCHS = 10
-MODEL_PATH = "disease_model.h5"
-
-# ----- HELPER FUNCTIONS -----
-def list_dataset_folders(base_dir):
-    return [f for f in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, f))]
-
-def count_images(base_dir):
-    counts = {}
-    for folder in list_dataset_folders(base_dir):
-        folder_path = os.path.join(base_dir, folder)
-        counts[folder] = len(os.listdir(folder_path))
-    return counts
-
-# ----- PRECHECKS -----
-print("TensorFlow version:", tf.__version__)
-print("Checking dataset folder:", DATASET_DIR)
-
-if not os.path.exists(DATASET_DIR):
-    print(f"ERROR: Dataset folder '{DATASET_DIR}' not found.")
-    sys.exit(1)
-
-folders = list_dataset_folders(DATASET_DIR)
-if not folders:
-    print("ERROR: No subfolders found in", DATASET_DIR)
-    print("Each class should be in its own folder. Example:")
-    print(" dataset/pneumonia/, dataset/normal/")
-    sys.exit(1)
-
-counts = count_images(DATASET_DIR)
-print("Found folders and image counts:")
-for k, v in counts.items():
-    print(f"  - {k}: {v} images")
-
-# ----- DATA AUGMENTATION -----
-datagen = ImageDataGenerator(
-    rescale=1.0/255,
-    validation_split=0.2,
-    rotation_range=20,
-    zoom_range=0.2,
-    horizontal_flip=True
+# Data augmentation and preprocessing
+train_datagen = ImageDataGenerator(
+    rescale=1./255,
+    rotation_range=15,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    shear_range=0.1,
+    zoom_range=0.1,
+    horizontal_flip=True,
+    fill_mode='nearest',
+    validation_split=0.25
 )
 
-train_gen = datagen.flow_from_directory(
-    DATASET_DIR,
-    target_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    class_mode='categorical',
+train_set = train_datagen.flow_from_directory(
+    'dataset',
+    target_size=(224, 224),
+    batch_size=2,
+    class_mode='binary',
     subset='training'
 )
 
-val_gen = datagen.flow_from_directory(
-    DATASET_DIR,
-    target_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    class_mode='categorical',
+val_set = train_datagen.flow_from_directory(
+    'dataset',
+    target_size=(224, 224),
+    batch_size=2,
+    class_mode='binary',
     subset='validation'
 )
 
-# ----- CNN MODEL -----
-model = models.Sequential([
-    layers.Conv2D(32, (3,3), activation='relu', input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3)),
-    layers.MaxPooling2D(2,2),
-    layers.Conv2D(64, (3,3), activation='relu'),
-    layers.MaxPooling2D(2,2),
-    layers.Conv2D(128, (3,3), activation='relu'),
-    layers.MaxPooling2D(2,2),
-    layers.Flatten(),
-    layers.Dense(128, activation='relu'),
-    layers.Dropout(0.4),
-    layers.Dense(train_gen.num_classes, activation='softmax')
-])
+# 🧠 Use MobileNetV2 as base model
+base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+base_model.trainable = False  # Freeze pretrained layers
 
-model.compile(optimizer='adam',
-              loss='categorical_crossentropy',
-              metrics=['accuracy'])
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dense(128, activation='relu')(x)
+x = Dropout(0.3)(x)
+predictions = Dense(1, activation='sigmoid')(x)
 
-model.summary()
+model = Model(inputs=base_model.input, outputs=predictions)
 
-# ----- TRAIN MODEL -----
-history = model.fit(
-    train_gen,
-    validation_data=val_gen,
-    epochs=EPOCHS
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# ⚖️ Compute class weights (for imbalance)
+class_weights = class_weight.compute_class_weight(
+    class_weight='balanced',
+    classes=np.unique(train_set.classes),
+    y=train_set.classes
+)
+class_weights = dict(enumerate(class_weights))
+print("Class weights:", class_weights)
+
+# 🚀 Train the model
+model.fit(
+    train_set,
+    validation_data=val_set,
+    epochs=8,
+    class_weight=class_weights
 )
 
-# ----- SAVE MODEL -----
-model.save(MODEL_PATH)
-print(f"✅ Model saved successfully as {MODEL_PATH}")
+# Save model
+model.save('pneumonia_model.h5')
+print("✅ Transfer learning model saved successfully as pneumonia_model.h5")
