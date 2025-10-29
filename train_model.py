@@ -1,35 +1,34 @@
-# train_model.py — robust trainer with helpful debug output
 import os
 import sys
-import traceback
 import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import layers, models
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-# ----- CONFIG -----
+# ----- CONFIGURATION -----
 DATASET_DIR = "dataset"
+IMG_SIZE = (150, 150)
+BATCH_SIZE = 32
+EPOCHS = 10
 MODEL_PATH = "disease_model.h5"
-IMG_SIZE = (128, 128)
-BATCH_SIZE = 16
-EPOCHS = 8
 
-# ----- HELPERS -----
-def list_dataset_folders(base):
-    if not os.path.exists(base):
-        return []
-    return [d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))]
+# ----- HELPER FUNCTIONS -----
+def list_dataset_folders(base_dir):
+    return [f for f in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, f))]
 
-def count_images(base):
+def count_images(base_dir):
     counts = {}
-    for label in list_dataset_folders(base):
-        p = os.path.join(base, label)
-        files = [f for f in os.listdir(p) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-        counts[label] = len(files)
+    for folder in list_dataset_folders(base_dir):
+        folder_path = os.path.join(base_dir, folder)
+        counts[folder] = len(os.listdir(folder_path))
     return counts
 
 # ----- PRECHECKS -----
 print("TensorFlow version:", tf.__version__)
 print("Checking dataset folder:", DATASET_DIR)
+
+if not os.path.exists(DATASET_DIR):
+    print(f"ERROR: Dataset folder '{DATASET_DIR}' not found.")
+    sys.exit(1)
 
 folders = list_dataset_folders(DATASET_DIR)
 if not folders:
@@ -43,86 +42,58 @@ print("Found folders and image counts:")
 for k, v in counts.items():
     print(f"  - {k}: {v} images")
 
-if not any(v > 0 for v in counts.values()):
-    print("ERROR: No image files (.jpg/.png) found in dataset subfolders.")
-    sys.exit(1)
+# ----- DATA AUGMENTATION -----
+datagen = ImageDataGenerator(
+    rescale=1.0/255,
+    validation_split=0.2,
+    rotation_range=20,
+    zoom_range=0.2,
+    horizontal_flip=True
+)
 
-# If some classes are tiny, suggest lowering batch size or using augmentation
-min_count = min(counts.values()) if counts else 0
-if min_count < 10:
-    print("WARNING: One or more classes have very few images (<10).")
-    print("  Training may not be stable. Consider adding more images or use transfer learning.")
+train_gen = datagen.flow_from_directory(
+    DATASET_DIR,
+    target_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='training'
+)
 
-# ----- DATA GENERATORS -----
-try:
-    datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
+val_gen = datagen.flow_from_directory(
+    DATASET_DIR,
+    target_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='validation'
+)
 
-    train_gen = datagen.flow_from_directory(
-        DATASET_DIR,
-        target_size=IMG_SIZE,
-        batch_size=BATCH_SIZE,
-        class_mode='categorical',
-        subset='training'
-    )
+# ----- CNN MODEL -----
+model = models.Sequential([
+    layers.Conv2D(32, (3,3), activation='relu', input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3)),
+    layers.MaxPooling2D(2,2),
+    layers.Conv2D(64, (3,3), activation='relu'),
+    layers.MaxPooling2D(2,2),
+    layers.Conv2D(128, (3,3), activation='relu'),
+    layers.MaxPooling2D(2,2),
+    layers.Flatten(),
+    layers.Dense(128, activation='relu'),
+    layers.Dropout(0.4),
+    layers.Dense(train_gen.num_classes, activation='softmax')
+])
 
-    val_gen = datagen.flow_from_directory(
-        DATASET_DIR,
-        target_size=IMG_SIZE,
-        batch_size=BATCH_SIZE,
-        class_mode='categorical',
-        subset='validation'
-    )
-except Exception as e:
-    print("ERROR while creating data generators:")
-    traceback.print_exc()
-    sys.exit(1)
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
 
-num_classes = train_gen.num_classes
-print("Number of classes:", num_classes)
-print("Class indices:", train_gen.class_indices)
+model.summary()
 
-# ----- BUILD MODEL -----
-try:
-    model = models.Sequential([
-        layers.Conv2D(32, (3,3), activation='relu', input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3)),
-        layers.MaxPooling2D(2,2),
-        layers.Conv2D(64, (3,3), activation='relu'),
-        layers.MaxPooling2D(2,2),
-        layers.Conv2D(128, (3,3), activation='relu'),
-        layers.MaxPooling2D(2,2),
-        layers.Flatten(),
-        layers.Dense(128, activation='relu'),
-        layers.Dropout(0.4),
-        layers.Dense(num_classes, activation='softmax')
-    ])
+# ----- TRAIN MODEL -----
+history = model.fit(
+    train_gen,
+    validation_data=val_gen,
+    epochs=EPOCHS
+)
 
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    model.summary()
-except Exception as e:
-    print("ERROR while building/compiling model:")
-    traceback.print_exc()
-    sys.exit(1)
-
-# ----- TRAIN -----
-try:
-    history = model.fit(train_gen, validation_data=val_gen, epochs=EPOCHS)
-except tf.errors.ResourceExhaustedError as e:
-    print("OOM (ResourceExhaustedError): try lowering BATCH_SIZE or IMG_SIZE, or use GPU with more memory.")
-    traceback.print_exc()
-    sys.exit(1)
-except Exception as e:
-    print("ERROR during training:")
-    traceback.print_exc()
-    sys.exit(1)
-
-# ----- SAVE -----
-try:
-    model.save(MODEL_PATH)
-    print("Saved model to", MODEL_PATH)
-except Exception as e:
-    print("ERROR while saving model:")
-    traceback.print_exc()
-    sys.exit(1)
-
-print("Training finished successfully.")
-print("Class mapping:", train_gen.class_indices)
+# ----- SAVE MODEL -----
+model.save(MODEL_PATH)
+print(f"✅ Model saved successfully as {MODEL_PATH}")
