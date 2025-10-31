@@ -3,6 +3,3 @@ tensorflow
 numpy
 pillow
 streamlit
-tensorflow
-numpy
-pillow
