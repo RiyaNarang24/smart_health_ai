@@ -1,72 +1,58 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Smart Health Knowledge Agent</title>
-    <style>
-        body { font-family: Arial; background: #f5f5f5; text-align: center; padding: 20px; }
-        .container { width: 60%; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px gray; }
-        input, button { padding: 8px; margin: 5px; }
-        .rules { text-align: left; margin: 20px 0; }
-        .speak { color: green; font-weight: bold; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pneumonia Detection</title>
+  <style>
+    body {
+      background-color: #f2f2f2;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 50px;
+    }
+    .container {
+      background-color: #fff;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+      display: inline-block;
+    }
+    input[type="file"] {
+      margin: 20px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .result {
+      margin-top: 20px;
+      font-size: 18px;
+      font-weight: bold;
+      color: #333;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🧠 Smart Health Knowledge Agent</h1>
+  <div class="container">
+    <h1>Pneumonia Detection from Chest X-Ray</h1>
+    <form action="/predict" method="post" enctype="multipart/form-data">
+      <input type="file" name="file" accept="image/*" required />
+      <br />
+      <button type="submit">Predict</button>
+    </form>
 
-        <h2>Add New Rule</h2>
-        <form action="/add_rule" method="POST">
-            IF <input type="text" name="conditions" placeholder="symptom1, symptom2" required>
-            THEN <input type="text" name="conclusion" placeholder="disease" required>
-            <button type="submit">Add Rule</button>
-        </form>
-
-        <h2>Existing Rules</h2>
-        <div class="rules">
-            {% for rule in rules %}
-                <p>{{ loop.index }}. IF {{ rule.if | join(', ') }} → THEN {{ rule.then }}
-                    <a href="/delete_rule/{{ loop.index0 }}">❌ Delete</a>
-                </p>
-            {% endfor %}
-        </div>
-
-        <h2>Infer Disease (by symptoms)</h2>
-        <form action="/infer" method="POST">
-            <input type="text" name="facts" placeholder="Enter symptoms separated by comma">
-            <button type="submit">Diagnose</button>
-        </form>
-
-        <h2>Detect from Image</h2>
-        <form action="/upload_image" method="POST" enctype="multipart/form-data">
-            <input type="file" name="image" accept="image/*" required>
-            <button type="submit">Upload & Predict</button>
-        </form>
-
-        {% if results %}
-            {% if results.conclusions %}
-                <h3>Diagnosis Result:</h3>
-                {% if results.conclusions.probabilities %}
-                    {% for disease, prob in results.conclusions.probabilities.items() %}
-                        <p>{{ disease }} → {{ prob }}%</p>
-                    {% endfor %}
-                {% else %}
-                    <p class="speak">Detected Disease: {{ results.conclusions[0] }}</p>
-                    <script>
-                        let msg = new SpeechSynthesisUtterance("You may have {{ results.conclusions[0] }}");
-                        window.speechSynthesis.speak(msg);
-                    </script>
-                {% endif %}
-            {% endif %}
-
-            {% if results.image_result %}
-                <h3>🩺 Image-based Detection:</h3>
-                <p class="speak">{{ results.image_result }}</p>
-                <script>
-                    let msg = new SpeechSynthesisUtterance("Image result shows possible {{ results.image_result }}");
-                    window.speechSynthesis.speak(msg);
-                </script>
-            {% endif %}
-        {% endif %}
-    </div>
+    {% if result %}
+      <div class="result">{{ result }}</div>
+    {% endif %}
+  </div>
 </body>
 </html>
