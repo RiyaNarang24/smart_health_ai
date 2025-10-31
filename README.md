@@ -1,25 +1,18 @@
+🩺 Pneumonia Detection from Chest X-Ray
 
-# Knowledge-Based AI Agent using Propositional Logic 🧠
+This project is an AI-based medical image classifier built with Streamlit and TensorFlow/Keras.
+It detects Pneumonia from chest X-ray images using a trained deep learning model (pneumonia_model.h5).
 
-This project demonstrates how a simple **AI reasoning system** can make logical inferences using stored knowledge and propositional rules.  
-It uses **Python (Flask)** for backend, **HTML + CSS** for frontend, and **SQLite** as the local database.
+🚀 Features
 
----
+Upload a chest X-ray in .jpg, .jpeg, or .png format.
 
-## 🚀 Project Overview
+The model analyzes the image and classifies it as:
 
-This web-based AI agent acts as a small **expert system**.  
-It stores knowledge as *if–then rules* and facts in a database.  
-When the user provides facts, the AI uses propositional logic to derive possible conclusions based on matching rules.
+✅ Normal
 
----
+⚠️ Pneumonia Detected
 
-## 🏗️ Technologies Used
-- **Python 3**
-- **Flask** – for backend and routing
-- **SQLite3** – for storing rules and facts
-- **HTML & CSS** – for the simple web interface
+Simple and interactive Streamlit user interface.
 
----
-
-## 📁 Folder Structure
+Real-time model predictions with confidence score.
