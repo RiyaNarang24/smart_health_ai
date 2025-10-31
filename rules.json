@@ -1,7 +1,0 @@
-[
-    {"if": ["sneezing", "cough", "cold"], "then": "flu"},
-    {"if": ["fever", "body pain"], "then": "viral infection"},
-    {"if": ["headache", "nausea"], "then": "migraine"},
-    {"if": ["rash", "itching"], "then": "allergy"},
-    {"if": ["tiredness", "weakness"], "then": "fatigue"}
-]
